@@ -278,6 +278,23 @@ describe('compare', () => {
       });
     });
 
+    describe('.greaterThanOrEqual', () => {
+      it('returns true when greater than', () => {
+        const match = compare.isDate(createDate(11, 'minutes')).greaterThanOrEqual(10, 'minutes');
+        assert.strictEqual(match, true);
+      });
+
+      it('returns true when equal to', () => {
+        const match = compare.isDate(createDate(10, 'minutes')).greaterThanOrEqual(10, 'minutes');
+        assert.strictEqual(match, true);
+      });
+
+      it('returns false when not greater than', () => {
+        const match = compare.isDate(createDate(9, 'minutes')).greaterThanOrEqual(10, 'minutes');
+        assert.strictEqual(match, false);
+      });
+    });
+
     describe('.equalTo', () => {
       it('returns true when equal to', () => {
         const match = compare.isDate(createDate(11, 'hours')).equalTo(11, 'hours');
