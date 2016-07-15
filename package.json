@@ -1,7 +1,7 @@
 {
   "name": "unit-compare",
-  "version": "1.0.0",
-  "description": "Compare units",
+  "version": "1.0.1",
+  "description": "Compare byte and datetime units",
   "main": "index.js",
   "scripts": {
     "lint": "eslint ./src",
