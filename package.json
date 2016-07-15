@@ -18,7 +18,9 @@
     "unit",
     "compare",
     "unit-compare",
-    "dates"
+    "dates",
+    "bytes",
+    "size"
   ],
   "author": "nspragg@gmail.com",
   "license": "ISC",
