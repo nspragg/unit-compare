@@ -6,6 +6,7 @@
 
 * [Installation](#installation)
 * [Usage](#usage)
+* [Use cases](#use-cases)
 * [Expressions](#expressions)
 * [API](#api)
 * [Migrating from 1.x](#migrating-from-1x)
@@ -59,6 +60,127 @@ try {
   }
 }
 ```
+
+## Use cases
+
+unit-compare is for writing expressive size and age filters, typically given on the command line, in a config file or in a search query. When the comparison is fixed in code, `stats.size > 10 * 1024` is simpler.
+
+### Command-line options
+
+A script that lists the files in a directory matching `--age` and `--size`, such as `cleanup --age '>=30 days' --size '>100mb' ./logs`:
+
+```js
+import { readdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parseArgs } from 'node:util';
+import { ExpressionError, parseAge, parseSize } from 'unit-compare';
+
+const { values, positionals } = parseArgs({
+  options: {
+    age: { type: 'string', default: '>=0' },
+    size: { type: 'string', default: '>=0' }
+  },
+  allowPositionals: true
+});
+
+function parseOption(parse, name) {
+  try {
+    return parse(values[name]);
+  } catch (err) {
+    if (!(err instanceof ExpressionError)) throw err;
+    console.error(`--${name}: ${err.message}`);
+    process.exit(2);
+  }
+}
+
+const isOld = parseOption(parseAge, 'age');
+const isLarge = parseOption(parseSize, 'size');
+
+const dir = positionals[0] ?? '.';
+for (const name of await readdir(dir)) {
+  const stats = await stat(join(dir, name));
+  if (stats.isFile() && isOld(stats.mtime) && isLarge(stats.size)) {
+    console.log(name);
+  }
+}
+```
+
+A mistyped option is reported before any files are read:
+
+```
+$ cleanup --age '>3 years' ./logs
+--age: Invalid expression '>3 years': unknown time unit 'years'
+```
+
+Every file's age is measured from when the options were parsed, so a file can't drop in or out of the results partway through the run.
+
+### Config files
+
+An expression keeps a setting to one readable field:
+
+```json
+{ "maxSize": "<30mb" }
+```
+
+rather than an object that every app has to validate in its own way:
+
+```json
+{ "maxSize": { "operator": "<", "value": 30, "unit": "mb" } }
+```
+
+For example, a long-running service with a retention policy in `cleanup.json`:
+
+```json
+{
+  "rules": [
+    { "dir": "logs", "age": ">=30 days" },
+    { "dir": "cache", "age": ">=1 week", "size": ">1mb" }
+  ]
+}
+```
+
+Parse every rule at startup, so a mistake in the config stops the service when it starts, rather than surfacing later when a cleanup runs:
+
+```js
+import { readFile } from 'node:fs/promises';
+import { ExpressionError, parseAge, parseSize } from 'unit-compare';
+
+const config = JSON.parse(await readFile('cleanup.json', 'utf8'));
+
+const rules = config.rules.map((rule, i) => {
+  try {
+    return {
+      dir: rule.dir,
+      isOld: parseAge(rule.age, { now: Date.now }),
+      isLarge: parseSize(rule.size ?? '>=0')
+    };
+  } catch (err) {
+    if (!(err instanceof ExpressionError)) throw err;
+    throw new Error(`cleanup.json rules[${i}]: ${err.message}`, { cause: err });
+  }
+});
+```
+
+```
+Error: cleanup.json rules[1]: Invalid expression '>=1 fortnight': unknown time unit 'fortnight'
+```
+
+The service runs for days, so `now: Date.now` makes each cleanup measure ages from the current time rather than from startup.
+
+### Finding files with filehound
+
+unit-compare was written for [filehound](https://github.com/nspragg/filehound), whose `size`, `modified`, `accessed` and `changed` filters take these expressions:
+
+```js
+import { FileHound, modified, size } from 'filehound';
+
+const files = await FileHound.create()
+  .paths('/var/log')
+  .match(size('>10mb').and(modified('>=7 days')))
+  .find();
+```
+
+Combined with the command-line example above, a user's `--size` and `--age` can be passed straight through as `size(values.size)` and `modified(values.age)`.
 
 ## Expressions
 
