@@ -1,8 +1,17 @@
 import { ByteAssertion } from './byteAssertion.ts';
 import { DateAssertion, type DateAssertionOptions, type DateInput } from './dateAssertion.ts';
 
-export { ByteAssertion, type ByteUnit } from './byteAssertion.ts';
-export { DateAssertion, type DateAssertionOptions, type DateInput, type TimeUnit } from './dateAssertion.ts';
+export { ByteAssertion, parseSize, type ByteUnit, type SizeFilter } from './byteAssertion.ts';
+export {
+  DateAssertion,
+  parseAge,
+  type AgeFilter,
+  type AgeOptions,
+  type AgeUnit,
+  type DateAssertionOptions,
+  type DateInput,
+  type TimeUnit
+} from './dateAssertion.ts';
 export { ExpressionError, type Operator } from './expression.ts';
 
 /**

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml/badge.svg)](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml)
 
-> Compare byte sizes and date ages using expressions such as `'>10kb'` and `'<=3 days'`
+> Parse and compare byte sizes and date ages using expressions such as `'>10kb'` and `'<=3 days'`
 
 * [Installation](#installation)
 * [Usage](#usage)
@@ -25,13 +25,25 @@ The package is ESM and ships TypeScript types. On Node 24 it can also be loaded 
 
 ## Usage
 
+Parse an expression once, then test values against it:
+
+```js
+import { parseSize, parseAge } from 'unit-compare';
+
+const isLarge = parseSize('>10mb');
+const isStale = parseAge('>=2 weeks'); // ages are measured from the time of parsing
+
+const matches = files.filter((file) => isLarge(file.size) && isStale(file.mtime));
+```
+
+A bad expression throws when it's parsed, before any values are tested, so input from users can be checked up front.
+
+For a one-off check, use `isSize` or `isDate`:
+
 ```js
 import { isSize, isDate } from 'unit-compare';
 
 isSize(1024).assert('<10mb'); // true
-isSize(2048).assert('>= 2 kb'); // true
-
-isDate(stats.mtime).assert('>=10 days'); // modified at least 10 days ago
 isDate(stats.mtime).assert('<30 minutes'); // modified in the last half an hour
 ```
 
@@ -74,6 +86,37 @@ A number can be passed instead of a string, and is treated as `'==<number>'`.
 
 ## API
 
+### `parseSize(expression) -> SizeFilter`
+
+Parses a [size expression](#assertexpression---boolean) into a function that takes a number of bytes and returns a `boolean`. The function throws a `TypeError` if it's given something other than a number.
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `bytes` - the threshold in bytes, e.g. `10240` for `'>10kb'`
+
+Throws an `ExpressionError` if the expression is invalid.
+
+### `parseAge(expression, options?) -> AgeFilter`
+
+Parses an [age expression](#assertexpression---boolean-1) into a function that takes a date (a `Date`, ISO string or milliseconds since the epoch) and returns a `boolean`. The function throws a `TypeError` for an invalid date.
+
+* `options.now` - the time ages are measured from. Defaults to the **time of parsing**, so every date tested against the filter is measured from the same moment. Pass a fixed time in any date form, or a function such as `Date.now` for a long-lived filter whose clock moves:
+
+  ```js
+  const isRecent = parseAge('<5 minutes', { now: Date.now });
+  ```
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `value` - the number in the expression
+* `unit` - `'minutes'`, `'hours'`, `'days'` or `'weeks'`
+
+Throws an `ExpressionError` if the expression is invalid, or a `TypeError` if a fixed `now` is invalid.
+
 ### `isSize(bytes) -> ByteAssertion`
 
 * `bytes` - a number of bytes. If `undefined`, every comparison returns `false`.
@@ -83,18 +126,13 @@ A number can be passed instead of a string, and is treated as `'==<number>'`.
 ### `isDate(date, options?) -> DateAssertion`
 
 * `date` - a `Date`, an ISO date string or milliseconds since the epoch.
-* `options.now` - the time ages are measured from, in any of the same forms. By default each comparison uses the current time. Pass a fixed time to compare many dates against the same moment, so a date near a unit boundary doesn't change result partway through:
-
-  ```js
-  const now = new Date();
-  const old = files.filter((file) => isDate(file.mtime, { now }).assert('>=10 days'));
-  ```
+* `options.now` - the time ages are measured from, in any of the same forms. By default each comparison uses the current time. To test many dates against the same moment, pass a fixed time, or use `parseAge`.
 
 Throws a `TypeError` if `date` or `now` is invalid.
 
 ### `ExpressionError`
 
-Thrown by `.assert()` for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
+Thrown by `parseSize`, `parseAge` and `.assert()` for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
 
 ## ByteAssertion
 
@@ -162,6 +200,7 @@ Examples:
 * Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. Invalid dates throw a `TypeError`, and invalid arguments to the comparison methods throw a `RangeError`.
 * Date ages are compared in whole units. `=` matches anywhere within the unit rather than to the second, and `>n` now means at least n + 1 units old.
 * `>=` is now supported for dates, and so is the `weeks` unit.
+* New `parseSize` and `parseAge` functions parse an expression once, so it's checked before any values are tested.
 * Size units are now case-insensitive, and leading or trailing whitespace no longer breaks parsing.
 
 ## Test

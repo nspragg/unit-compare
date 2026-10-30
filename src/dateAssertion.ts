@@ -6,9 +6,9 @@ export type TimeUnit =
   | 'd' | 'day' | 'days'
   | 'w' | 'week' | 'weeks';
 
-type CanonicalUnit = 'minutes' | 'hours' | 'days' | 'weeks';
+export type AgeUnit = 'minutes' | 'hours' | 'days' | 'weeks';
 
-const units: Record<string, CanonicalUnit> = {
+const units: Record<string, AgeUnit> = {
   '': 'days',
   m: 'minutes',
   min: 'minutes',
@@ -26,7 +26,7 @@ const units: Record<string, CanonicalUnit> = {
   weeks: 'weeks'
 };
 
-function normalise(unit: string): CanonicalUnit {
+function normalise(unit: string): AgeUnit {
   const canonical = units[unit.toLowerCase()];
   if (canonical === undefined) {
     throw new RangeError(`Unknown time unit '${unit}'`);
@@ -44,7 +44,7 @@ function toTime(date: DateInput, name: string): number {
 
 // Days and weeks are calendar days, so they stay correct across daylight
 // saving changes; minutes and hours are fixed lengths.
-function subtract(now: Date, amount: number, unit: CanonicalUnit): number {
+function subtract(now: Date, amount: number, unit: AgeUnit): number {
   switch (unit) {
     case 'minutes': return now.getTime() - amount * 60_000;
     case 'hours': return now.getTime() - amount * 3_600_000;
@@ -53,7 +53,75 @@ function subtract(now: Date, amount: number, unit: CanonicalUnit): number {
   }
 }
 
+// The times n and n + 1 units before now. A date's age is at least n units
+// when it is at or before the first.
+type Thresholds = readonly [number, number];
+
+function thresholds(now: number, value: number, unit: AgeUnit): Thresholds {
+  const date = new Date(now);
+  return [subtract(date, value, unit), subtract(date, value + 1, unit)];
+}
+
+function compare(operator: Operator, time: number, [nAgo, nPlusOneAgo]: Thresholds): boolean {
+  switch (operator) {
+    case '<': return time > nAgo;
+    case '<=': return time > nPlusOneAgo;
+    case '>': return time <= nPlusOneAgo;
+    case '>=': return time <= nAgo;
+    case '==': return time <= nAgo && time > nPlusOneAgo;
+  }
+}
+
 export type DateInput = Date | string | number;
+
+export interface AgeOptions {
+  /**
+   * The time ages are measured from: a fixed time, or a function such as
+   * `Date.now` for a clock that moves. Defaults to the time of parsing.
+   */
+  now?: DateInput | (() => DateInput);
+}
+
+export interface AgeFilter {
+  /**
+   * @throws TypeError if the date is invalid
+   */
+  (date: DateInput): boolean;
+  readonly expression: string | number;
+  readonly operator: Operator;
+  readonly value: number;
+  readonly unit: AgeUnit;
+}
+
+/**
+ * Parses an age expression such as `'>=10 days'` into a function that tests
+ * a date against it. The unit defaults to days; the operator defaults to
+ * `==`. Ages are compared in whole units, like `find -mtime`.
+ *
+ * @throws ExpressionError if the expression can't be parsed or has an unknown unit
+ * @throws TypeError if a fixed `now` is invalid
+ */
+export function parseAge(expression: string | number, options: AgeOptions = {}): AgeFilter {
+  const { operator, value, unit } = parseExpression(expression);
+  const canonical = units[unit];
+  if (canonical === undefined) {
+    throw new ExpressionError(expression, `unknown time unit '${unit}'`);
+  }
+
+  const { now = Date.now() } = options;
+  const at = (time: DateInput) => thresholds(toTime(time, 'now'), value, canonical);
+  let current: () => Thresholds;
+  if (typeof now === 'function') {
+    current = () => at(now());
+  } else {
+    const fixed = at(now);
+    current = () => fixed;
+  }
+
+  const filter = (date: DateInput) => compare(operator, toTime(date, 'date'), current());
+
+  return Object.freeze(Object.assign(filter, { expression, operator, value, unit: canonical }));
+}
 
 export interface DateAssertionOptions {
   /**
@@ -87,12 +155,7 @@ export class DateAssertion {
    * @throws ExpressionError if the expression can't be parsed or has an unknown unit
    */
   assert(expression: string | number): boolean {
-    const { operator, value, unit } = parseExpression(expression);
-    const canonical = units[unit];
-    if (canonical === undefined) {
-      throw new ExpressionError(expression, `unknown time unit '${unit}'`);
-    }
-    return this.#compare(operator, value, canonical);
+    return parseAge(expression, { now: this.#now ?? Date.now })(this.#time);
   }
 
   lessThan(value: number, unit: TimeUnit = 'days'): boolean {
@@ -115,17 +178,7 @@ export class DateAssertion {
     return this.#compare('>=', toCount(value), normalise(unit));
   }
 
-  // The age is at least n units when the date is at or before now - n units.
-  #compare(operator: Operator, value: number, unit: CanonicalUnit): boolean {
-    const now = new Date(this.#now ?? Date.now());
-    const atLeast = (n: number) => this.#time <= subtract(now, n, unit);
-
-    switch (operator) {
-      case '<': return !atLeast(value);
-      case '<=': return !atLeast(value + 1);
-      case '>': return atLeast(value + 1);
-      case '>=': return atLeast(value);
-      case '==': return atLeast(value) && !atLeast(value + 1);
-    }
+  #compare(operator: Operator, value: number, unit: AgeUnit): boolean {
+    return compare(operator, this.#time, thresholds(this.#now ?? Date.now(), value, unit));
   }
 }
