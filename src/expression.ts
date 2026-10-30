@@ -1,5 +1,12 @@
 export type Operator = '<' | '<=' | '>' | '>=' | '==';
 
+export interface Assertion {
+  /**
+   * @throws ExpressionError if the expression can't be parsed or has an unknown unit
+   */
+  assert(expression: string | number): boolean;
+}
+
 export interface Expression {
   operator: Operator;
   value: number;
@@ -58,11 +65,4 @@ export function parseExpression(expression: string | number): Expression {
 
 function isCount(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
-}
-
-export function toCount(value: number): number {
-  if (!isCount(value)) {
-    throw new RangeError(`Expected a non-negative integer, got ${value}`);
-  }
-  return value;
 }

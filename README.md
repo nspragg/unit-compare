@@ -6,9 +6,8 @@
 
 * [Installation](#installation)
 * [Usage](#usage)
+* [Expressions](#expressions)
 * [API](#api)
-* [ByteAssertion](#byteassertion)
-* [DateAssertion](#dateassertion)
 * [Migrating from 1.x](#migrating-from-1x)
 * [Test](#test)
 * [Contributing](#contributing)
@@ -47,28 +46,19 @@ isSize(1024).assert('<10mb'); // true
 isDate(stats.mtime).assert('<30 minutes'); // modified in the last half an hour
 ```
 
-The comparison methods can be called directly:
-
-```js
-isSize(n).lessThan(10, 'k');
-isDate(date).greaterThanOrEqual(2, 'weeks');
-```
-
 An expression that can't be parsed, or has an unknown unit, throws an `ExpressionError` rather than returning `false`:
 
 ```js
 import { ExpressionError } from 'unit-compare';
 
 try {
-  isDate(date).assert('>3 years');
+  parseAge(userInput);
 } catch (err) {
   if (err instanceof ExpressionError) {
-    console.error(err.message); // Invalid expression '>3 years': unknown time unit 'years'
+    console.error(err.message); // e.g. Invalid expression '>3 years': unknown time unit 'years'
   }
 }
 ```
-
-The comparison methods throw a `RangeError` for an unknown unit or a value that isn't a non-negative integer.
 
 ## Expressions
 
@@ -84,59 +74,7 @@ Operators:
 
 A number can be passed instead of a string, and is treated as `'==<number>'`.
 
-## API
-
-### `parseSize(expression) -> SizeFilter`
-
-Parses a [size expression](#assertexpression---boolean) into a function that takes a number of bytes and returns a `boolean`. The function throws a `TypeError` if it's given something other than a number.
-
-The function also has read-only properties:
-
-* `expression` - the expression as given
-* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
-* `bytes` - the threshold in bytes, e.g. `10240` for `'>10kb'`
-
-Throws an `ExpressionError` if the expression is invalid.
-
-### `parseAge(expression, options?) -> AgeFilter`
-
-Parses an [age expression](#assertexpression---boolean-1) into a function that takes a date (a `Date`, ISO string or milliseconds since the epoch) and returns a `boolean`. The function throws a `TypeError` for an invalid date.
-
-* `options.now` - the time ages are measured from. Defaults to the **time of parsing**, so every date tested against the filter is measured from the same moment. Pass a fixed time in any date form, or a function such as `Date.now` for a long-lived filter whose clock moves:
-
-  ```js
-  const isRecent = parseAge('<5 minutes', { now: Date.now });
-  ```
-
-The function also has read-only properties:
-
-* `expression` - the expression as given
-* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
-* `value` - the number in the expression
-* `unit` - `'minutes'`, `'hours'`, `'days'` or `'weeks'`
-
-Throws an `ExpressionError` if the expression is invalid, or a `TypeError` if a fixed `now` is invalid.
-
-### `isSize(bytes) -> ByteAssertion`
-
-* `bytes` - a number of bytes. If `undefined`, every comparison returns `false`.
-
-`isNumber(bytes)` is an alias for `isSize`.
-
-### `isDate(date, options?) -> DateAssertion`
-
-* `date` - a `Date`, an ISO date string or milliseconds since the epoch.
-* `options.now` - the time ages are measured from, in any of the same forms. By default each comparison uses the current time. To test many dates against the same moment, pass a fixed time, or use `parseAge`.
-
-Throws a `TypeError` if `date` or `now` is invalid.
-
-### `ExpressionError`
-
-Thrown by `parseSize`, `parseAge` and `.assert()` for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
-
-## ByteAssertion
-
-### `.assert(expression) -> boolean`
+### Sizes
 
 Size units are multiples of 1024:
 
@@ -152,20 +90,9 @@ Examples:
 * less than 10 bytes: `<10`
 * greater than 50 megabytes: `>50mb`
 
-### `.lessThan(value, unit = 'b') -> boolean`
-### `.lessThanOrEqual(value, unit = 'b') -> boolean`
-### `.equalTo(value, unit = 'b') -> boolean`
-### `.greaterThan(value, unit = 'b') -> boolean`
-### `.greaterThanOrEqual(value, unit = 'b') -> boolean`
+### Ages
 
-* `value` - a non-negative integer
-* `unit` - any of the size units above
-
-## DateAssertion
-
-### `.assert(expression) -> boolean`
-
-Compares how long ago the date was. Time units:
+An age is how long ago a date was. Time units:
 
 * minutes: `m`, `min`, `mins`, `minute` or `minutes`
 * hours: `h`, `hour` or `hours`
@@ -183,21 +110,59 @@ Examples:
 * more than 50 minutes old: `>50minutes`
 * at least 2 weeks old: `>=2w`
 
-### `.lessThan(value, unit = 'days') -> boolean`
-### `.lessThanOrEqual(value, unit = 'days') -> boolean`
-### `.equalTo(value, unit = 'days') -> boolean`
-### `.greaterThan(value, unit = 'days') -> boolean`
-### `.greaterThanOrEqual(value, unit = 'days') -> boolean`
+## API
 
-* `value` - a non-negative integer
-* `unit` - any of the time units above
+### `parseSize(expression) -> SizeFilter`
+
+Parses a [size expression](#sizes) into a function that takes a number of bytes and returns a `boolean`. The function throws a `TypeError` if it's given something other than a number.
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `bytes` - the threshold in bytes, e.g. `10240` for `'>10kb'`
+
+Throws an `ExpressionError` if the expression is invalid.
+
+### `parseAge(expression, options?) -> AgeFilter`
+
+Parses an [age expression](#ages) into a function that takes a date (a `Date`, ISO string or milliseconds since the epoch) and returns a `boolean`. The function throws a `TypeError` for an invalid date.
+
+* `options.now` - the time ages are measured from. Defaults to the **time of parsing**, so every date tested against the filter is measured from the same moment. Pass a fixed time in any date form, or a function such as `Date.now` for a long-lived filter whose clock moves:
+
+  ```js
+  const isRecent = parseAge('<5 minutes', { now: Date.now });
+  ```
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `value` - the number in the expression
+* `unit` - `'minutes'`, `'hours'`, `'days'` or `'weeks'`
+
+Throws an `ExpressionError` if the expression is invalid, or a `TypeError` if a fixed `now` is invalid.
+
+### `isSize(bytes).assert(expression) -> boolean`
+
+The same as `parseSize(expression)(bytes)`. `isSize` throws a `TypeError` if `bytes` isn't a number, and `assert` throws an `ExpressionError` if the expression is invalid.
+
+### `isDate(date).assert(expression) -> boolean`
+
+The same as `parseAge(expression)(date)`, so the age is measured from the time `assert` is called. `isDate` throws a `TypeError` if the date is invalid, and `assert` throws an `ExpressionError` if the expression is invalid.
+
+### `ExpressionError`
+
+Thrown for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
 
 ## Migrating from 1.x
 
-* Requires Node.js 24 or later. The package is ESM: use `import { isNumber, isDate } from 'unit-compare'`, or `require()` on Node 24.
-* `isSize` is the new name for `isNumber`, which is kept as an alias.
+* Requires Node.js 24 or later. The package is ESM: use `import { isSize, isDate } from 'unit-compare'`, or `require()` on Node 24.
+* `isNumber` is renamed to `isSize`.
+* The comparison methods, such as `lessThan` and `greaterThanOrEqual`, are removed. Use an expression instead: `isSize(n).lessThan(10, 'k')` becomes `isSize(n).assert('<10k')`.
+* `isSize` and `isDate` return an object with only an `assert` method. The `ByteAssertion` and `DateAssertion` classes are no longer exported.
 * `moment` is no longer a dependency. Pass `isDate` a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
-* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. Invalid dates throw a `TypeError`, and invalid arguments to the comparison methods throw a `RangeError`.
+* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. `isSize` throws a `TypeError` for anything other than a number, including `undefined`, and `isDate` throws a `TypeError` for an invalid date.
 * Date ages are compared in whole units. `=` matches anywhere within the unit rather than to the second, and `>n` now means at least n + 1 units old.
 * `>=` is now supported for dates, and so is the `weeks` unit.
 * New `parseSize` and `parseAge` functions parse an expression once, so it's checked before any values are tested.

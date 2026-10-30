@@ -1,10 +1,4 @@
-import { ExpressionError, parseExpression, toCount, type Operator } from './expression.ts';
-
-export type TimeUnit =
-  | 'm' | 'min' | 'mins' | 'minute' | 'minutes'
-  | 'h' | 'hour' | 'hours'
-  | 'd' | 'day' | 'days'
-  | 'w' | 'week' | 'weeks';
+import { ExpressionError, parseExpression, type Assertion, type Operator } from './expression.ts';
 
 export type AgeUnit = 'minutes' | 'hours' | 'days' | 'weeks';
 
@@ -26,13 +20,7 @@ const units: Record<string, AgeUnit> = {
   weeks: 'weeks'
 };
 
-function normalise(unit: string): AgeUnit {
-  const canonical = units[unit.toLowerCase()];
-  if (canonical === undefined) {
-    throw new RangeError(`Unknown time unit '${unit}'`);
-  }
-  return canonical;
-}
+export type DateInput = Date | string | number;
 
 function toTime(date: DateInput, name: string): number {
   const time = new Date(date).getTime();
@@ -72,8 +60,6 @@ function compare(operator: Operator, time: number, [nAgo, nPlusOneAgo]: Threshol
   }
 }
 
-export type DateInput = Date | string | number;
-
 export interface AgeOptions {
   /**
    * The time ages are measured from: a fixed time, or a function such as
@@ -96,7 +82,11 @@ export interface AgeFilter {
 /**
  * Parses an age expression such as `'>=10 days'` into a function that tests
  * a date against it. The unit defaults to days; the operator defaults to
- * `==`. Ages are compared in whole units, like `find -mtime`.
+ * `==`.
+ *
+ * Ages are compared in whole units, like `find -mtime`: a date 2.5 days old
+ * is 2 days old, so it matches `'=2 days'`, `'>=2 days'` and `'<3 days'` but
+ * not `'>2 days'`.
  *
  * @throws ExpressionError if the expression can't be parsed or has an unknown unit
  * @throws TypeError if a fixed `now` is invalid
@@ -123,62 +113,13 @@ export function parseAge(expression: string | number, options: AgeOptions = {}):
   return Object.freeze(Object.assign(filter, { expression, operator, value, unit: canonical }));
 }
 
-export interface DateAssertionOptions {
-  /**
-   * The time ages are measured from. Defaults to the time of each comparison;
-   * pass a fixed time to compare many dates consistently.
-   */
-  now?: DateInput;
-}
-
 /**
- * Compares the age of a date in whole units: a date 2.5 days old is 2 days
- * old, so it matches `'=2 days'`, `'>=2 days'` and `'<3 days'` but not
- * `'>2 days'`. This is the same rounding as `find -mtime`.
+ * For a one-off check: `isDate(date).assert(expression)` is the same as
+ * `parseAge(expression)(date)`, measuring the age from the time of the call.
+ *
+ * @throws TypeError if the date is invalid
  */
-export class DateAssertion {
-  readonly #time: number;
-  readonly #now: number | undefined;
-
-  /**
-   * @throws TypeError if the date or `now` is invalid
-   */
-  constructor(date: DateInput, options: DateAssertionOptions = {}) {
-    this.#time = toTime(date, 'date');
-    this.#now = options.now === undefined ? undefined : toTime(options.now, 'now');
-  }
-
-  /**
-   * Compares against an age expression such as `'>=10 days'`. The unit
-   * defaults to days; the operator defaults to `==`.
-   *
-   * @throws ExpressionError if the expression can't be parsed or has an unknown unit
-   */
-  assert(expression: string | number): boolean {
-    return parseAge(expression, { now: this.#now ?? Date.now })(this.#time);
-  }
-
-  lessThan(value: number, unit: TimeUnit = 'days'): boolean {
-    return this.#compare('<', toCount(value), normalise(unit));
-  }
-
-  lessThanOrEqual(value: number, unit: TimeUnit = 'days'): boolean {
-    return this.#compare('<=', toCount(value), normalise(unit));
-  }
-
-  equalTo(value: number, unit: TimeUnit = 'days'): boolean {
-    return this.#compare('==', toCount(value), normalise(unit));
-  }
-
-  greaterThan(value: number, unit: TimeUnit = 'days'): boolean {
-    return this.#compare('>', toCount(value), normalise(unit));
-  }
-
-  greaterThanOrEqual(value: number, unit: TimeUnit = 'days'): boolean {
-    return this.#compare('>=', toCount(value), normalise(unit));
-  }
-
-  #compare(operator: Operator, value: number, unit: AgeUnit): boolean {
-    return compare(operator, this.#time, thresholds(this.#now ?? Date.now(), value, unit));
-  }
+export function isDate(date: DateInput): Assertion {
+  const time = toTime(date, 'date');
+  return { assert: (expression) => parseAge(expression)(time) };
 }
