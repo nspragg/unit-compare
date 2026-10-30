@@ -1,204 +1,168 @@
 # unit-compare
 
-[![Build Status](https://travis-ci.org/nspragg/unit-compare.svg)](https://travis-ci.org/nspragg/unit-compare) [![Coverage Status](https://coveralls.io/repos/github/nspragg/unit-compare/badge.svg?branch=master)](https://coveralls.io/github/nspragg/unit-compare?branch=master)
+[![CI](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml/badge.svg)](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml)
 
-> Compare date/time and byte units
+> Compare byte sizes and date ages using expressions such as `'>10kb'` and `'<=3 days'`
 
 * [Installation](#installation)
-* [Features](#features)
-* [Demo](#demo)
 * [Usage](#usage)
 * [API](#api)
-* [Instance methods](#instance-methods)
+* [ByteAssertion](#byteassertion)
+* [DateAssertion](#dateassertion)
+* [Migrating from 1.x](#migrating-from-1x)
 * [Test](#test)
 * [Contributing](#contributing)
 
 ## Installation
 
+Requires Node.js 24 or later.
+
 ```
-npm install --save unit-compare
+npm install unit-compare
 ```
 
-## Features
-
-* Compares bytes sizes
-* Compares ISO datetimes
+The package is ESM and ships TypeScript types. On Node 24 it can also be loaded with `require()`.
 
 ## Usage
 
-The example below asserts if a number if less then 10 megabytes:
+```js
+import { isSize, isDate } from 'unit-compare';
+
+isSize(1024).assert('<10mb'); // true
+isSize(2048).assert('>= 2 kb'); // true
+
+isDate(stats.mtime).assert('>=10 days'); // modified at least 10 days ago
+isDate(stats.mtime).assert('<30 minutes'); // modified in the last half an hour
+```
+
+The comparison methods can be called directly:
 
 ```js
-const compare = require('unit-compare');
+isSize(n).lessThan(10, 'k');
+isDate(date).greaterThanOrEqual(2, 'weeks');
+```
 
-const n = 1024;
-const isLessThen10Mb = compare.isNumber(n).assert('<10mb')
-if (isLessThen10Mb) {
-  console.log(`${n} is less than 10mb`);
+An expression that can't be parsed, or has an unknown unit, throws an `ExpressionError` rather than returning `false`:
+
+```js
+import { ExpressionError } from 'unit-compare';
+
+try {
+  isDate(date).assert('>3 years');
+} catch (err) {
+  if (err instanceof ExpressionError) {
+    console.error(err.message); // Invalid expression '>3 years': unknown time unit 'years'
+  }
 }
 ```
 
-#### Byte unit comparisons
+The comparison methods throw a `RangeError` for an unknown unit or a value that isn't a non-negative integer.
 
-Assert if a given number against a string byte size expression:
+## Expressions
 
-```js
-const greaterThan10kb = compare.isNumber(n).assert('>10kb')
-```
+An expression is `[operator] value [unit]`, where `value` is a non-negative integer. Whitespace before, after and between the parts is ignored, and units are case-insensitive.
 
-Using comparison methods directly:
+Operators:
 
-```js
-const greaterThan10kb = compare.isNumber(n).lessThan(10, 'k');
-```
+* `<` less than
+* `<=` less than or equal to
+* `>` greater than
+* `>=` greater than or equal to
+* `==` or `=` equal to (the default)
 
-#### Compare dates with a string expression
-
-Assert if a given number against a string datetime  expression:
-
-```js
-const date = moment();
-const equalTo10Mins = compare.isDate(date).assert('>10 minutes');
-```
-
-Using comparison methods directly:
-
-```js
-const date = moment().subtract(10, 'minutes');
-const greaterThan10kb = compare.isDate(date).lessThan(10, 'days');
-```
+A number can be passed instead of a string, and is treated as `'==<number>'`.
 
 ## API
 
-### `compare.isDate() -> DateAssertion`
+### `isSize(bytes) -> ByteAssertion`
 
-##### Parameters
-* ISO string date
+* `bytes` - a number of bytes. If `undefined`, every comparison returns `false`.
 
-##### Returns
-Returns an DateAssertion instance.
+`isNumber(bytes)` is an alias for `isSize`.
 
-### `compare.isNumber() -> ByteAssertion`
+### `isDate(date, options?) -> DateAssertion`
 
-##### Parameters
-* Accepts an integer
+* `date` - a `Date`, an ISO date string or milliseconds since the epoch.
+* `options.now` - the time ages are measured from, in any of the same forms. By default each comparison uses the current time. Pass a fixed time to compare many dates against the same moment, so a date near a unit boundary doesn't change result partway through:
 
-##### Returns
-Returns a ByteAssertion instance.
+  ```js
+  const now = new Date();
+  const old = files.filter((file) => isDate(file.mtime, { now }).assert('>=10 days'));
+  ```
+
+Throws a `TypeError` if `date` or `now` is invalid.
+
+### `ExpressionError`
+
+Thrown by `.assert()` for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
 
 ## ByteAssertion
 
-### `.assert(sizeExpression) -> boolean`
+### `.assert(expression) -> boolean`
 
-##### Parameters
-* sizeExpression - accepts a positive integer representing the file size. File size units are:
-  * bytes, specified using __b__.
-  * kilobytes, specified using __k__ or __kb__,
-  * megabytes, specified using __m__ or __mb__
-  * terabytes, specified using __t__ or __tb__
-  * gigabytes, specified using __g__ or __gb__
+Size units are multiples of 1024:
 
-  If no unit is specified, __bytes__ is used by default.
+* bytes: `b` (the default)
+* kilobytes: `k` or `kb`
+* megabytes: `m` or `mb`
+* gigabytes: `g` or `gb`
+* terabytes: `t` or `tb`
 
-  Optionally, expressions can be prefixed with a comparison operator, including:
-   * less than using __<__
-   * greater than using __>__
-   * equality using __==__ or __=__
-   * less than or equal to using __<=__
-   * greater than or equal to __\>=__  
+Examples:
 
-  Examples:
-  * equal to 10 bytes: __10__
-  * equal to 10 bytes: __==10b__
-  * less than 10 bytes: __<10__
-  * greater than 50 megabytes: __>10mg__  
+* equal to 10 bytes: `10`, `==10b`
+* less than 10 bytes: `<10`
+* greater than 50 megabytes: `>50mb`
 
-### `.lessThan(int, unit) -> boolean`
+### `.lessThan(value, unit = 'b') -> boolean`
+### `.lessThanOrEqual(value, unit = 'b') -> boolean`
+### `.equalTo(value, unit = 'b') -> boolean`
+### `.greaterThan(value, unit = 'b') -> boolean`
+### `.greaterThanOrEqual(value, unit = 'b') -> boolean`
 
-##### Parameters
-* integer
-* unit - k, m, g, t
-
-### `.greaterThan(int, unit) -> boolean`
-
-##### Parameters
-* integer
-* unit - k, m, g, t
-
-### `.equalTo(int, unit) -> boolean`
-
-##### Parameters
-* integer
-* unit - k, m, g, t
-
-### `.greaterThanOrEqual(int, unit) -> boolean`
-
-##### Parameters
-* integer
-* unit - k, m, g, t
-
-### `.lessThanOrEqual(int, unit) -> boolean`
-
-##### Parameters
-* integer
-* unit - k, m, g, t
+* `value` - a non-negative integer
+* `unit` - any of the size units above
 
 ## DateAssertion
 
-##### Parameters
-* dateExpression - accepts a time unit. Time units are:
-  * minutes, specified using __minutes__, __m__, __mins__, __min__.
-  * hours, specified using __hours__, __h__, __hour__.
-  * days, specified using __days__, __d__, __day__.
+### `.assert(expression) -> boolean`
 
-  If no unit is specified, __days__ is used by default.
+Compares how long ago the date was. Time units:
 
-  Optionally, expressions can be prefixed with a comparison operator, including:
-   * less than using __<__
-   * greater than using __>__
-   * equality using __==__ or __=__
+* minutes: `m`, `min`, `mins`, `minute` or `minutes`
+* hours: `h`, `hour` or `hours`
+* days: `d`, `day` or `days` (the default)
+* weeks: `w`, `week` or `weeks`
 
- If no comparison operator is specified, equality is used by default.
+Ages are compared in **whole units**, like `find -mtime`: a date 2½ days old is 2 days old. So it matches `=2 days`, `>=2 days`, `<=2 days` and `<3 days`, but not `>2 days`.
 
-  Examples:
-  * equal to 10 days: __10__
-  * equal to 10 minutes: __== minutes__
-  * less than 10 hours: __< 10 hours__
-  * greater than 50 minutes: __>50minutes__  
-  * less than 50 minutes: __<50m__  
+Days and weeks are calendar days, so they stay correct across daylight saving changes. Minutes and hours are fixed lengths.
 
-##### Returns
-* Returns boolean
+Examples:
 
-### `.lessThan(int, timeUnit) -> boolean`
+* 10 days old: `10`, `=10 days`
+* less than 10 hours old: `< 10 hours`
+* more than 50 minutes old: `>50minutes`
+* at least 2 weeks old: `>=2w`
 
-##### Parameters
-* integer
-* timeUnit - minutes, hours, days
+### `.lessThan(value, unit = 'days') -> boolean`
+### `.lessThanOrEqual(value, unit = 'days') -> boolean`
+### `.equalTo(value, unit = 'days') -> boolean`
+### `.greaterThan(value, unit = 'days') -> boolean`
+### `.greaterThanOrEqual(value, unit = 'days') -> boolean`
 
-### `.greaterThan(int, timeUnit) -> boolean`
+* `value` - a non-negative integer
+* `unit` - any of the time units above
 
-##### Parameters
-* integer
-* timeUnit - minutes, hours, days
+## Migrating from 1.x
 
-### `.equalTo(int, timeUnit) -> boolean`
-
-##### Parameters
-* integer
-* timeUnit - minutes, hours, days
-
-### `.greaterThanOrEqual(int, timeUnit) -> boolean`
-
-##### Parameters
-* integer
-* timeUnit - minutes, hours, days
-
-### `.lessThanOrEqual(int, timeUnit) -> boolean`
-
-##### Parameters
-* integer
-* timeUnit - minutes, hours, days
+* Requires Node.js 24 or later. The package is ESM: use `import { isNumber, isDate } from 'unit-compare'`, or `require()` on Node 24.
+* `isSize` is the new name for `isNumber`, which is kept as an alias.
+* `moment` is no longer a dependency. Pass `isDate` a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
+* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. Invalid dates throw a `TypeError`, and invalid arguments to the comparison methods throw a `RangeError`.
+* Date ages are compared in whole units. `=` matches anywhere within the unit rather than to the second, and `>n` now means at least n + 1 units old.
+* `>=` is now supported for dates, and so is the `weeks` unit.
+* Size units are now case-insensitive, and leading or trailing whitespace no longer breaks parsing.
 
 ## Test
 
@@ -206,16 +170,16 @@ Returns a ByteAssertion instance.
 npm test
 ```
 
-To generate a test coverage report:
+To check coverage:
 
 ```
 npm run coverage
 ```
+
 ## Contributing
 
 * If you're unsure if a feature would make a good addition, you can always [create an issue](https://github.com/nspragg/unit-compare/issues/new) first.
 * We aim for 100% test coverage. Please write tests for any new functionality or changes.
 * Any API changes should be fully documented.
-* Make sure your code meets our linting standards. Run `npm run lint` to check your code.
-* Maintain the existing coding style. There are some settings in `.jsbeautifyrc` to help.
+* Make sure your code passes `npm run lint` and `npm run typecheck`.
 * Be mindful of others when making suggestions and/or code reviewing.
