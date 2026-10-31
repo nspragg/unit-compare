@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ExpressionError, isSize, parseSize } from '../src/index.ts';
+import { ExpressionError, parseSize } from '../src/index.ts';
 
 const KB = 1024;
 
@@ -113,26 +113,4 @@ describe('parseSize', () => {
       assert.throws(() => parseSize('banana'), /Invalid expression 'banana'/);
     });
   });
-});
-
-describe('isSize', () => {
-  it('asserts an expression', () => {
-    assert.equal(isSize(2 * KB).assert('>1kb'), true);
-    assert.equal(isSize(512).assert('>1kb'), false);
-  });
-
-  it('treats a number as ==<bytes>', () => {
-    assert.equal(isSize(2048).assert(2048), true);
-    assert.equal(isSize(2049).assert(2048), false);
-  });
-
-  it('throws an ExpressionError for an invalid expression', () => {
-    assert.throws(() => isSize(0).assert('banana'), ExpressionError);
-  });
-
-  for (const bytes of [undefined, null, '1024', NaN]) {
-    it(`throws a TypeError for ${String(bytes)}`, () => {
-      assert.throws(() => isSize(bytes as unknown as number), TypeError);
-    });
-  }
 });

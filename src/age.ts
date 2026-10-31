@@ -1,4 +1,4 @@
-import { ExpressionError, parseExpression, type Assertion, type Operator } from './expression.ts';
+import { ExpressionError, parseExpression, type Operator } from './expression.ts';
 
 export type AgeUnit = 'minutes' | 'hours' | 'days' | 'weeks';
 
@@ -111,15 +111,4 @@ export function parseAge(expression: string | number, options: AgeOptions = {}):
   const filter = (date: DateInput) => compare(operator, toTime(date, 'date'), current());
 
   return Object.freeze(Object.assign(filter, { expression, operator, value, unit: canonical }));
-}
-
-/**
- * For a one-off check: `isDate(date).assert(expression)` is the same as
- * `parseAge(expression)(date)`, measuring the age from the time of the call.
- *
- * @throws TypeError if the date is invalid
- */
-export function isDate(date: DateInput): Assertion {
-  const time = toTime(date, 'date');
-  return { assert: (expression) => parseAge(expression)(time) };
 }

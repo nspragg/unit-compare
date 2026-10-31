@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
-import { ExpressionError, isDate, parseAge } from '../src/index.ts';
+import { ExpressionError, parseAge } from '../src/index.ts';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -250,34 +250,4 @@ describe('parseAge', () => {
       assert.throws(() => parseAge('banana'), /Invalid expression 'banana'/);
     });
   });
-});
-
-describe('isDate', () => {
-  it('asserts an expression', () => {
-    assert.equal(isDate(ago(3 * DAY)).assert('>=2 days'), true);
-    assert.equal(isDate(ago(3 * DAY)).assert('<2 days'), false);
-  });
-
-  it('measures the age from the time of each call', () => {
-    const assertion = isDate(ago(9 * DAY));
-    assert.equal(assertion.assert('=9 days'), true);
-    mock.timers.tick(DAY);
-    assert.equal(assertion.assert('=10 days'), true);
-  });
-
-  it('accepts a Date, ISO string or milliseconds since the epoch', () => {
-    assert.equal(isDate(ago(20 * DAY)).assert('20 days'), true);
-    assert.equal(isDate(ago(20 * DAY).toISOString()).assert('20 days'), true);
-    assert.equal(isDate(NOW - 20 * DAY).assert('20 days'), true);
-  });
-
-  it('throws an ExpressionError for an invalid expression', () => {
-    assert.throws(() => isDate(ago(0)).assert('>3 years'), ExpressionError);
-  });
-
-  for (const date of ['banana', NaN, new Date(NaN)]) {
-    it(`throws a TypeError for ${String(date)}`, () => {
-      assert.throws(() => isDate(date), { name: 'TypeError', message: `Invalid date '${String(date)}'` });
-    });
-  }
 });

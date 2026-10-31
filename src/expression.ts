@@ -1,12 +1,5 @@
 export type Operator = '<' | '<=' | '>' | '>=' | '==';
 
-export interface Assertion {
-  /**
-   * @throws ExpressionError if the expression can't be parsed or has an unknown unit
-   */
-  assert(expression: string | number): boolean;
-}
-
 export interface Expression {
   operator: Operator;
   value: number;
@@ -14,8 +7,7 @@ export interface Expression {
 }
 
 /**
- * Thrown when an expression passed to `assert` can't be parsed or has an
- * unknown unit.
+ * Thrown when an expression can't be parsed or has an unknown unit.
  */
 export class ExpressionError extends Error {
   override name = 'ExpressionError';

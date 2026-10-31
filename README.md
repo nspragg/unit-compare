@@ -38,13 +38,11 @@ const matches = files.filter((file) => isLarge(file.size) && isStale(file.mtime)
 
 A bad expression throws when it's parsed, before any values are tested, so input from users can be checked up front.
 
-For a one-off check, use `isSize` or `isDate`:
+A filter is a plain function, so a one-off check is a single call:
 
 ```js
-import { isSize, isDate } from 'unit-compare';
-
-isSize(1024).assert('<10mb'); // true
-isDate(stats.mtime).assert('<30 minutes'); // modified in the last half an hour
+parseSize('<10mb')(1024); // true
+parseAge('<30 minutes')(stats.mtime); // modified in the last half an hour
 ```
 
 An expression that can't be parsed, or has an unknown unit, throws an `ExpressionError` rather than returning `false`:
@@ -63,7 +61,7 @@ try {
 
 ## Use cases
 
-unit-compare is for writing expressive size and age filters, typically given on the command line, in a config file or in a search query. When the comparison is fixed in code, `stats.size > 10 * 1024` is simpler.
+unit-compare is for writing expressive size and age filters, typically given on the command line, in a config file or in a search query.
 
 ### Command-line options
 
@@ -265,29 +263,24 @@ The function also has read-only properties:
 
 Throws an `ExpressionError` if the expression is invalid, or a `TypeError` if a fixed `now` is invalid.
 
-### `isSize(bytes).assert(expression) -> boolean`
-
-The same as `parseSize(expression)(bytes)`. `isSize` throws a `TypeError` if `bytes` isn't a number, and `assert` throws an `ExpressionError` if the expression is invalid.
-
-### `isDate(date).assert(expression) -> boolean`
-
-The same as `parseAge(expression)(date)`, so the age is measured from the time `assert` is called. `isDate` throws a `TypeError` if the date is invalid, and `assert` throws an `ExpressionError` if the expression is invalid.
-
 ### `ExpressionError`
 
 Thrown for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
 
 ## Migrating from 1.x
 
-* Requires Node.js 24 or later. The package is ESM: use `import { isSize, isDate } from 'unit-compare'`, or `require()` on Node 24.
-* `isNumber` is renamed to `isSize`.
-* The comparison methods, such as `lessThan` and `greaterThanOrEqual`, are removed. Use an expression instead: `isSize(n).lessThan(10, 'k')` becomes `isSize(n).assert('<10k')`.
-* `isSize` and `isDate` return an object with only an `assert` method. The `ByteAssertion` and `DateAssertion` classes are no longer exported.
-* `moment` is no longer a dependency. Pass `isDate` a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
-* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. `isSize` throws a `TypeError` for anything other than a number, including `undefined`, and `isDate` throws a `TypeError` for an invalid date.
+* Requires Node.js 24 or later. The package is ESM: use `import { parseSize, parseAge } from 'unit-compare'`, or `require()` on Node 24.
+* `isNumber`, `isDate` and the `ByteAssertion` and `DateAssertion` classes are removed. Parse the expression into a filter with `parseSize` or `parseAge`, then call it with the value:
+  * `isNumber(n).assert('<10k')` becomes `parseSize('<10k')(n)`
+  * `isDate(date).assert('>2 days')` becomes `parseAge('>2 days')(date)`
+
+  When testing many values, parse once and reuse the filter.
+* The comparison methods, such as `lessThan` and `greaterThanOrEqual`, are removed. Use an expression instead: `isNumber(n).lessThan(10, 'k')` becomes `parseSize('<10k')(n)`.
+* `moment` is no longer a dependency. Pass an age filter a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
+* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. A size filter throws a `TypeError` for anything other than a number, including `undefined`, and an age filter throws a `TypeError` for an invalid date.
 * Date ages are compared in whole units. `=` matches anywhere within the unit rather than to the second, and `>n` now means at least n + 1 units old.
 * `>=` is now supported for dates, and so is the `weeks` unit.
-* New `parseSize` and `parseAge` functions parse an expression once, so it's checked before any values are tested.
+* Because an expression is parsed before any values are tested, a bad expression is reported up front.
 * Size units are now case-insensitive, and leading or trailing whitespace no longer breaks parsing.
 
 ## Test

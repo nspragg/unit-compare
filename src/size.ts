@@ -1,4 +1,4 @@
-import { ExpressionError, parseExpression, type Assertion, type Operator } from './expression.ts';
+import { ExpressionError, parseExpression, type Operator } from './expression.ts';
 
 const multipliers: Record<string, number> = {
   '': 1,
@@ -59,15 +59,4 @@ export function parseSize(expression: string | number): SizeFilter {
   const filter = (bytes: number) => compare(operator, checkBytes(bytes), threshold);
 
   return Object.freeze(Object.assign(filter, { expression, operator, bytes: threshold }));
-}
-
-/**
- * For a one-off check: `isSize(n).assert(expression)` is the same as
- * `parseSize(expression)(n)`.
- *
- * @throws TypeError if `bytes` isn't a number
- */
-export function isSize(bytes: number): Assertion {
-  checkBytes(bytes);
-  return { assert: (expression) => parseSize(expression)(bytes) };
 }
