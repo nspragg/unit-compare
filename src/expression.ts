@@ -7,8 +7,7 @@ export interface Expression {
 }
 
 /**
- * Thrown when an expression passed to `assert` can't be parsed or has an
- * unknown unit.
+ * Thrown when an expression can't be parsed or has an unknown unit.
  */
 export class ExpressionError extends Error {
   override name = 'ExpressionError';
@@ -58,11 +57,4 @@ export function parseExpression(expression: string | number): Expression {
 
 function isCount(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
-}
-
-export function toCount(value: number): number {
-  if (!isCount(value)) {
-    throw new RangeError(`Expected a non-negative integer, got ${value}`);
-  }
-  return value;
 }

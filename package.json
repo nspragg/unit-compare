@@ -24,7 +24,8 @@
     "lint": "eslint .",
     "test": "node --test 'test/**/*.test.ts'",
     "coverage": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 'test/**/*.test.ts'",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "check:package": "npm run build && publint --strict && attw --pack . --ignore-rules cjs-resolves-to-esm"
   },
   "repository": {
     "type": "git",
@@ -45,10 +46,12 @@
   },
   "homepage": "https://github.com/nspragg/unit-compare",
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^24.19.2",
     "eslint": "^10.14.0",
+    "publint": "^0.3.25",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1"
   }

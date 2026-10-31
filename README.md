@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml/badge.svg)](https://github.com/nspragg/unit-compare/actions/workflows/ci.yml)
 
-> Compare byte sizes and date ages using expressions such as `'>10kb'` and `'<=3 days'`
+> Parse and compare byte sizes and date ages using expressions such as `'>10kb'` and `'<=3 days'`
 
 * [Installation](#installation)
 * [Usage](#usage)
+* [Use cases](#use-cases)
+* [Expressions](#expressions)
 * [API](#api)
-* [ByteAssertion](#byteassertion)
-* [DateAssertion](#dateassertion)
 * [Migrating from 1.x](#migrating-from-1x)
 * [Test](#test)
 * [Contributing](#contributing)
@@ -25,21 +25,24 @@ The package is ESM and ships TypeScript types. On Node 24 it can also be loaded 
 
 ## Usage
 
+Parse an expression once, then test values against it:
+
 ```js
-import { isSize, isDate } from 'unit-compare';
+import { parseSize, parseAge } from 'unit-compare';
 
-isSize(1024).assert('<10mb'); // true
-isSize(2048).assert('>= 2 kb'); // true
+const isLarge = parseSize('>10mb');
+const isStale = parseAge('>=2 weeks'); // ages are measured from the time of parsing
 
-isDate(stats.mtime).assert('>=10 days'); // modified at least 10 days ago
-isDate(stats.mtime).assert('<30 minutes'); // modified in the last half an hour
+const matches = files.filter((file) => isLarge(file.size) && isStale(file.mtime));
 ```
 
-The comparison methods can be called directly:
+A bad expression throws when it's parsed, before any values are tested, so input from users can be checked up front.
+
+A filter is a plain function, so a one-off check is a single call:
 
 ```js
-isSize(n).lessThan(10, 'k');
-isDate(date).greaterThanOrEqual(2, 'weeks');
+parseSize('<10mb')(1024); // true
+parseAge('<30 minutes')(stats.mtime); // modified in the last half an hour
 ```
 
 An expression that can't be parsed, or has an unknown unit, throws an `ExpressionError` rather than returning `false`:
@@ -48,15 +51,134 @@ An expression that can't be parsed, or has an unknown unit, throws an `Expressio
 import { ExpressionError } from 'unit-compare';
 
 try {
-  isDate(date).assert('>3 years');
+  parseAge(userInput);
 } catch (err) {
   if (err instanceof ExpressionError) {
-    console.error(err.message); // Invalid expression '>3 years': unknown time unit 'years'
+    console.error(err.message); // e.g. Invalid expression '>3 years': unknown time unit 'years'
   }
 }
 ```
 
-The comparison methods throw a `RangeError` for an unknown unit or a value that isn't a non-negative integer.
+## Use cases
+
+unit-compare is for writing expressive size and age filters, typically given on the command line, in a config file or in a search query.
+
+### Command-line options
+
+A script that lists the files in a directory matching `--age` and `--size`, such as `cleanup --age '>=30 days' --size '>100mb' ./logs`:
+
+```js
+import { readdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parseArgs } from 'node:util';
+import { ExpressionError, parseAge, parseSize } from 'unit-compare';
+
+const { values, positionals } = parseArgs({
+  options: {
+    age: { type: 'string', default: '>=0' },
+    size: { type: 'string', default: '>=0' }
+  },
+  allowPositionals: true
+});
+
+function parseOption(parse, name) {
+  try {
+    return parse(values[name]);
+  } catch (err) {
+    if (!(err instanceof ExpressionError)) throw err;
+    console.error(`--${name}: ${err.message}`);
+    process.exit(2);
+  }
+}
+
+const isOld = parseOption(parseAge, 'age');
+const isLarge = parseOption(parseSize, 'size');
+
+const dir = positionals[0] ?? '.';
+for (const name of await readdir(dir)) {
+  const stats = await stat(join(dir, name));
+  if (stats.isFile() && isOld(stats.mtime) && isLarge(stats.size)) {
+    console.log(name);
+  }
+}
+```
+
+A mistyped option is reported before any files are read:
+
+```
+$ cleanup --age '>3 years' ./logs
+--age: Invalid expression '>3 years': unknown time unit 'years'
+```
+
+Every file's age is measured from when the options were parsed, so a file can't drop in or out of the results partway through the run.
+
+### Config files
+
+An expression keeps a setting to one readable field:
+
+```json
+{ "maxSize": "<30mb" }
+```
+
+rather than an object that every app has to validate in its own way:
+
+```json
+{ "maxSize": { "operator": "<", "value": 30, "unit": "mb" } }
+```
+
+For example, a long-running service with a retention policy in `cleanup.json`:
+
+```json
+{
+  "rules": [
+    { "dir": "logs", "age": ">=30 days" },
+    { "dir": "cache", "age": ">=1 week", "size": ">1mb" }
+  ]
+}
+```
+
+Parse every rule at startup, so a mistake in the config stops the service when it starts, rather than surfacing later when a cleanup runs:
+
+```js
+import { readFile } from 'node:fs/promises';
+import { ExpressionError, parseAge, parseSize } from 'unit-compare';
+
+const config = JSON.parse(await readFile('cleanup.json', 'utf8'));
+
+const rules = config.rules.map((rule, i) => {
+  try {
+    return {
+      dir: rule.dir,
+      isOld: parseAge(rule.age, { now: Date.now }),
+      isLarge: parseSize(rule.size ?? '>=0')
+    };
+  } catch (err) {
+    if (!(err instanceof ExpressionError)) throw err;
+    throw new Error(`cleanup.json rules[${i}]: ${err.message}`, { cause: err });
+  }
+});
+```
+
+```
+Error: cleanup.json rules[1]: Invalid expression '>=1 fortnight': unknown time unit 'fortnight'
+```
+
+The service runs for days, so `now: Date.now` makes each cleanup measure ages from the current time rather than from startup.
+
+### Finding files with filehound
+
+unit-compare was written for [filehound](https://github.com/nspragg/filehound), whose `size`, `modified`, `accessed` and `changed` filters take these expressions:
+
+```js
+import { FileHound, modified, size } from 'filehound';
+
+const files = await FileHound.create()
+  .paths('/var/log')
+  .match(size('>10mb').and(modified('>=7 days')))
+  .find();
+```
+
+Combined with the command-line example above, a user's `--size` and `--age` can be passed straight through as `size(values.size)` and `modified(values.age)`.
 
 ## Expressions
 
@@ -72,33 +194,7 @@ Operators:
 
 A number can be passed instead of a string, and is treated as `'==<number>'`.
 
-## API
-
-### `isSize(bytes) -> ByteAssertion`
-
-* `bytes` - a number of bytes. If `undefined`, every comparison returns `false`.
-
-`isNumber(bytes)` is an alias for `isSize`.
-
-### `isDate(date, options?) -> DateAssertion`
-
-* `date` - a `Date`, an ISO date string or milliseconds since the epoch.
-* `options.now` - the time ages are measured from, in any of the same forms. By default each comparison uses the current time. Pass a fixed time to compare many dates against the same moment, so a date near a unit boundary doesn't change result partway through:
-
-  ```js
-  const now = new Date();
-  const old = files.filter((file) => isDate(file.mtime, { now }).assert('>=10 days'));
-  ```
-
-Throws a `TypeError` if `date` or `now` is invalid.
-
-### `ExpressionError`
-
-Thrown by `.assert()` for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
-
-## ByteAssertion
-
-### `.assert(expression) -> boolean`
+### Sizes
 
 Size units are multiples of 1024:
 
@@ -114,20 +210,9 @@ Examples:
 * less than 10 bytes: `<10`
 * greater than 50 megabytes: `>50mb`
 
-### `.lessThan(value, unit = 'b') -> boolean`
-### `.lessThanOrEqual(value, unit = 'b') -> boolean`
-### `.equalTo(value, unit = 'b') -> boolean`
-### `.greaterThan(value, unit = 'b') -> boolean`
-### `.greaterThanOrEqual(value, unit = 'b') -> boolean`
+### Ages
 
-* `value` - a non-negative integer
-* `unit` - any of the size units above
-
-## DateAssertion
-
-### `.assert(expression) -> boolean`
-
-Compares how long ago the date was. Time units:
+An age is how long ago a date was. Time units:
 
 * minutes: `m`, `min`, `mins`, `minute` or `minutes`
 * hours: `h`, `hour` or `hours`
@@ -145,23 +230,57 @@ Examples:
 * more than 50 minutes old: `>50minutes`
 * at least 2 weeks old: `>=2w`
 
-### `.lessThan(value, unit = 'days') -> boolean`
-### `.lessThanOrEqual(value, unit = 'days') -> boolean`
-### `.equalTo(value, unit = 'days') -> boolean`
-### `.greaterThan(value, unit = 'days') -> boolean`
-### `.greaterThanOrEqual(value, unit = 'days') -> boolean`
+## API
 
-* `value` - a non-negative integer
-* `unit` - any of the time units above
+### `parseSize(expression) -> SizeFilter`
+
+Parses a [size expression](#sizes) into a function that takes a number of bytes and returns a `boolean`. The function throws a `TypeError` if it's given something other than a number.
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `bytes` - the threshold in bytes, e.g. `10240` for `'>10kb'`
+
+Throws an `ExpressionError` if the expression is invalid.
+
+### `parseAge(expression, options?) -> AgeFilter`
+
+Parses an [age expression](#ages) into a function that takes a date (a `Date`, ISO string or milliseconds since the epoch) and returns a `boolean`. The function throws a `TypeError` for an invalid date.
+
+* `options.now` - the time ages are measured from. Defaults to the **time of parsing**, so every date tested against the filter is measured from the same moment. Pass a fixed time in any date form, or a function such as `Date.now` for a long-lived filter whose clock moves:
+
+  ```js
+  const isRecent = parseAge('<5 minutes', { now: Date.now });
+  ```
+
+The function also has read-only properties:
+
+* `expression` - the expression as given
+* `operator` - `'<'`, `'<='`, `'>'`, `'>='` or `'=='`
+* `value` - the number in the expression
+* `unit` - `'minutes'`, `'hours'`, `'days'` or `'weeks'`
+
+Throws an `ExpressionError` if the expression is invalid, or a `TypeError` if a fixed `now` is invalid.
+
+### `ExpressionError`
+
+Thrown for an invalid expression. Extends `Error`, and has an `expression` property holding the expression that failed.
 
 ## Migrating from 1.x
 
-* Requires Node.js 24 or later. The package is ESM: use `import { isNumber, isDate } from 'unit-compare'`, or `require()` on Node 24.
-* `isSize` is the new name for `isNumber`, which is kept as an alias.
-* `moment` is no longer a dependency. Pass `isDate` a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
-* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. Invalid dates throw a `TypeError`, and invalid arguments to the comparison methods throw a `RangeError`.
+* Requires Node.js 24 or later. The package is ESM: use `import { parseSize, parseAge } from 'unit-compare'`, or `require()` on Node 24.
+* `isNumber`, `isDate` and the `ByteAssertion` and `DateAssertion` classes are removed. Parse the expression into a filter with `parseSize` or `parseAge`, then call it with the value:
+  * `isNumber(n).assert('<10k')` becomes `parseSize('<10k')(n)`
+  * `isDate(date).assert('>2 days')` becomes `parseAge('>2 days')(date)`
+
+  When testing many values, parse once and reuse the filter.
+* The comparison methods, such as `lessThan` and `greaterThanOrEqual`, are removed. Use an expression instead: `isNumber(n).lessThan(10, 'k')` becomes `parseSize('<10k')(n)`.
+* `moment` is no longer a dependency. Pass an age filter a `Date`, ISO string or timestamp; for a moment object, call `.toDate()` first.
+* Invalid expressions and unknown units now throw an `ExpressionError` instead of returning a wrong answer. A size filter throws a `TypeError` for anything other than a number, including `undefined`, and an age filter throws a `TypeError` for an invalid date.
 * Date ages are compared in whole units. `=` matches anywhere within the unit rather than to the second, and `>n` now means at least n + 1 units old.
 * `>=` is now supported for dates, and so is the `weeks` unit.
+* Because an expression is parsed before any values are tested, a bad expression is reported up front.
 * Size units are now case-insensitive, and leading or trailing whitespace no longer breaks parsing.
 
 ## Test
